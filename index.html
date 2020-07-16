@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Ecsy Test Task</title>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+    
+    <script type="module">
+      import { World, System, Component, TagComponent, Types } from "https://ecsy.io/build/ecsy.module.js";
+
+      const NUM_ELEMENTS = 40;
+      const SPEED_MULTIPLIER = 0.15;
+      const MAX_SHAPE_SIZE = 15;
+      const MIN_SHAPE_SIZE = 1;
+      // I believe this value is presented on video
+      // const MAX_LIFETIME = 3;
+      const MAX_LIFETIME = 5;
+      const MIN_LIFETIME = 1;
+
+      // Initialize canvas
+      let canvas = document.querySelector("canvas");
+      let canvasWidth = canvas.width = window.innerWidth;
+      let canvasHeight = canvas.height = window.innerHeight;
+      let ctx = canvas.getContext("2d");
+
+      //----------------------
+      // Components
+      //----------------------
+      
+      // Velocity component
+      class Velocity extends Component {}
+
+      Velocity.schema = {
+        x: { type: Types.Number },
+        y: { type: Types.Number }
+      };
+
+      // Position component
+      class Position extends Component {}
+
+      Position.schema = {
+        x: { type: Types.Number },
+        y: { type: Types.Number }
+      };
+      
+      // Shape component
+      class Shape extends Component {}
+
+      Shape.schema = {
+        primitive: { type: Types.String, default: 'box' }
+      };
+
+      // Size component
+      class Size extends Component {}
+
+      Size.schema = {
+        size: { type: Types.Number }
+      };
+
+      // LifeTime component
+      class LifeTime extends Component {}
+
+      LifeTime.schema = {
+        time: { type: Types.Number }
+      };
+      
+      // Renderable component
+      class Renderable extends TagComponent {}
+      
+      //----------------------
+      // Systems
+      //----------------------
+      
+      // MovableSystem
+      class MovableSystem extends System {
+        // This method will get called on every frame by default
+        execute(delta, time) {
+          // Iterate through all the entities on the query
+          this.queries.moving.results.forEach(entity => {
+            const velocity = entity.getComponent(Velocity);
+            const position = entity.getMutableComponent(Position);
+            const size = entity.getComponent(Size).size;
+            position.x += velocity.x * delta;
+            position.y += velocity.y * delta;
+            
+            if (position.x > canvasWidth + size / 2) position.x =  size / 2;
+            if (position.x <  size / 2) position.x = canvasWidth - size / 2;
+            if (position.y > canvasHeight + size / 2) position.y = - size / 2;
+            if (position.y < - size / 2) position.y = canvasHeight + size / 2;
+          });
+        }
+      }
+
+      // Define a query of entities that have "Velocity" and "Position" components
+      MovableSystem.queries = {
+        moving: {
+          components: [Velocity, Position]
+        }
+      }
+
+      // RendererSystem
+      class RendererSystem extends System {
+        // This method will get called on every frame by default
+        execute(delta, time) {
+          
+          ctx.fillStyle = "#d4d4d4";
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          
+          // Iterate through all the entities on the query
+          this.queries.renderables.results.forEach(entity => {
+            const shape = entity.getComponent(Shape);
+            const position = entity.getComponent(Position);
+            const size = entity.getComponent(Size).size;
+            const lifetime = entity.getComponent(LifeTime).time;
+            if (shape.primitive === 'box') {
+              this.drawBox(position, size);
+            } else {
+              this.drawCircle(position, size);
+            }
+            // Clear entity after random amount of time [1-5]s
+            setTimeout(() => entity.removeAllComponents(), lifetime);
+          });
+        }
+        
+        drawCircle(position, size) {
+          ctx.beginPath();
+          ctx.arc(position.x, position.y, size / 2, 0, 2 * Math.PI, false);
+          ctx.fillStyle= "#39c495";
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#0b845b";
+          ctx.stroke();
+        }
+        
+        drawBox(position, size) {
+          ctx.beginPath();
+          ctx.rect(position.x - size / 2, position.y - size / 2, size, size);
+          ctx.fillStyle= "#e2736e";
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#b74843";
+          ctx.stroke();
+        }
+      }
+
+      // Define a query of entities that have "Renderable", "Shape", "Size" and "LifeTime" components
+      RendererSystem.queries = {
+        renderables: { components: [Renderable, Shape, Size, LifeTime] }
+      }
+      
+      // Create world and register the components and systems on it
+      const world = new World();
+      world
+        .registerComponent(Velocity)
+        .registerComponent(Position)
+        .registerComponent(Shape)
+        .registerComponent(Size)
+        .registerComponent(LifeTime)
+        .registerComponent(Renderable)
+        .registerSystem(MovableSystem)
+        .registerSystem(RendererSystem);
+
+      // Some helper functions when creating the components
+      function getRandomVelocity() {
+        return {
+          x: SPEED_MULTIPLIER * (2 * Math.random() - 1), 
+          y: SPEED_MULTIPLIER * (2 * Math.random() - 1)
+        };
+      }
+      
+      function getMousePosition({clientX, clientY}) {
+        return { 
+          x: clientX, 
+          y: clientY
+        };
+      }
+      
+      function getRandomShape() {
+         return {
+           primitive: Math.random() >= 0.5 ? 'circle' : 'box'
+         };
+      }
+
+      function getRandomSize() { 
+        return {
+          size: Math.random() * (MAX_SHAPE_SIZE - MIN_SHAPE_SIZE) + MIN_SHAPE_SIZE
+        };
+      }
+
+      function getRandomLifeTime() { 
+        return {
+          time: (Math.random() * (MAX_LIFETIME - MIN_LIFETIME) + MIN_LIFETIME) * 1000
+        };
+      }
+      
+      canvas.addEventListener('click', (event) => {
+        for (let i = 0; i < NUM_ELEMENTS; i++) {
+          world
+            .createEntity()
+              .addComponent(Velocity, getRandomVelocity())
+              .addComponent(Shape, getRandomShape())
+              .addComponent(Size, getRandomSize())
+              .addComponent(LifeTime, getRandomLifeTime())
+              .addComponent(Position, getMousePosition(event))
+              .addComponent(Renderable)
+        }
+      })
+            
+      // Run!
+      function run() {
+        // Compute delta and elapsed time
+        const time = performance.now();
+        const delta = time - lastTime;
+
+        // Run all the systems
+        world.execute(delta, time);
+
+        lastTime = time;
+        requestAnimationFrame(run);
+      }
+
+      let lastTime = performance.now();
+      run();  
+    </script>
+  </head>  
+  <body>
+    <canvas width="500" height="500"></canvas>
+  </body>
+</html>
